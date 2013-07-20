@@ -118,6 +118,27 @@ int write_line(dynalogin_client_t *session, const char *msg)
 	return 0;  // FIXME - should check sending status code
 }
 
+int dynalogin_session_get_ocra_challenge(dynalogin_client_t *session, const char *user, char *challenge) {
+    char msg[MAX_BUF];
+    char *line;
+    int ret, response_code;
+
+    if(snprintf(msg, MAX_BUF-1, "CHALL OCRA %s\n", user) >= MAX_BUF)
+    {
+        syslog(LOG_ERR, "user too long for buffer, auth failed");
+        return -1;
+    }
+    write_line (session, msg);
+
+    line = read_line (session);
+    if(strncmp(line,"250 CHALL",9)!=0) {
+        syslog(LOG_ERR, "server didn't return challenge upon request, auth failed: %s", line);
+        return -1;
+    }
+    strcpy(challenge,line+10);
+    free(line);
+}
+
 int dynalogin_session_authenticate(dynalogin_client_t *session, const char *user, const char *scheme, const char *code) {
 
 	char msg[MAX_BUF];

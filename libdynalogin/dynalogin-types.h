@@ -21,7 +21,8 @@ typedef enum { DYNALOGIN_SUCCESS,
 
 typedef enum dynalogin_scheme {
 	HOTP = 0,
-	TOTP = 1
+	TOTP = 1,
+    OCRA = 2
 } dynalogin_scheme_t;
 
 #endif /* DYNALOGINTYPES_H_ */

@@ -242,6 +242,13 @@ void socket_thread_handle(socket_thread_data_t *td)
 	dynalogin_scheme_t scheme;
 	dynalogin_code_t code;
 
+    char challenge[65];
+    char *current_challenge = NULL;
+    size_t current_challenge_bin_length;
+    char *current_user = NULL;
+    char *challenge_reply=NULL;
+    int ret;
+
 	char *digest_realm;
 	char *digest_response;
 	char *digest_suffix;
@@ -283,16 +290,44 @@ void socket_thread_handle(socket_thread_data_t *td)
 			send_result(td, 221);
 			return;
 		}
-                else if(strcasecmp(argv[0], "UDATA")==0)
+        else if(strcasecmp(argv[0], "CHALL")==0)
+        {
+            /* User asks for challenge */
+            if(ntokens < 2)
+	        {
+                /* Command too short */
+                syslog(LOG_WARNING, "insufficient tokens in query");
+                res = send_result(td, 500);
+            }
+            if((current_challenge=generate_challenge(td->dynalogin_session,argv[1], challenge, &current_challenge_bin_length))==NULL)
+            {
+                syslog(LOG_ERR, "couldn't generate challenge string, aborting");
+                send_result(td,500);
+                return;
+            }
+
+            challenge_reply=calloc(strlen(challenge)+13,sizeof(char));
+            if((ret=snprintf(challenge_reply,strlen(challenge)+13,"250 CHALL %s\n",challenge))>=strlen(challenge)+14)
+            {
+                syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
+                send_result(td,500);
+                return;
+            }
+            current_user = malloc(sizeof(char)*(strlen(argv[1])+1));
+            strncpy(current_user, argv[1],strlen(argv[1])+1);
+            res = send_answer(td,challenge_reply);
+            free(challenge_reply);
+        }
+        else if(strcasecmp(argv[0], "UDATA")==0)
 		{
 			/* User sending user ID and response value */
 			selected_mode=argv[1];
 			if(ntokens < 1)
 			{
-                                /* Command too short */
-                                syslog(LOG_WARNING, "insufficient tokens in query");
-                                res = send_result(td, 500);
-			}
+                /* Command too short */
+                syslog(LOG_WARNING, "insufficient tokens in query");
+                res = send_result(td, 500);
+            }
 			else if(strcasecmp(selected_mode, "HOTP") == 0 ||
 					strcasecmp(selected_mode, "TOTP") == 0)
 			{
@@ -374,6 +409,72 @@ void socket_thread_handle(socket_thread_data_t *td)
 						res = send_result(td, 500);
 					}
 				}
+			}
+            else if(strcasecmp(selected_mode, "OCRA") == 0)
+			{
+				userid=argv[2];
+				scheme = OCRA;
+				code=argv[3];
+				if(ntokens < 4)
+				{
+					/* Command too short */
+					syslog(LOG_WARNING, "insufficient tokens in query");
+					res = send_result(td, 500);
+				}
+				else
+				{
+					syslog(LOG_DEBUG, "attempting DYNALOGIN auth for user=%s", userid);
+                    if(current_challenge==NULL || current_user==NULL)
+                    {
+                        syslog(LOG_WARNING, "need to generate challenge before authenticating using OCRA");
+                        res = send_answer(td, "500 cannot authenticate using OCRA without generating a challenge first\n");
+                        free(current_challenge);
+                        free(current_user);
+                        current_user = NULL;
+                        current_challenge = NULL;
+                    } 
+                    else if(strcmp(userid,current_user)!=0) 
+                    {
+                        syslog(LOG_WARNING, "attempted authentication with different user than challenge was requested for: %s vs %s",userid,current_user);
+                        free(current_user);
+                        free(current_challenge);
+                        current_user = NULL;
+                        current_challenge = NULL;
+                        res = send_answer(td, "500 cannot authenticate with different user than challenge requester\n");
+                    } 
+                    else 
+                    {
+                        syslog(LOG_WARNING, "delegating authentication to libdynalogin");
+                        dynalogin_res = dynalogin_authenticate_challenge(td->dynalogin_session,
+                                userid, scheme, code, current_challenge, current_challenge_bin_length);
+
+                        free(current_user);
+                        free(current_challenge);
+                        current_challenge=NULL;
+                        current_user=NULL;
+
+                        switch(dynalogin_res)
+                        {
+                            case DYNALOGIN_SUCCESS:
+                                syslog(LOG_DEBUG, "DYNALOGIN success for user=%s", userid);
+                                res = send_result(td, 250);
+                                break;
+                            case DYNALOGIN_DENY:
+                                /* User unknown or bad password */
+                                syslog(LOG_DEBUG, "DYNALOGIN denied for user=%s", userid);
+                                res = send_result(td, 401);
+                                break;
+                            case DYNALOGIN_ERROR:
+                                /* Error connecting to DB, etc */
+                                syslog(LOG_DEBUG, "DYNALOGIN error for user=%s", userid);
+                                res = send_result(td, 500);
+                                break;
+                            default:
+                                syslog(LOG_DEBUG, "DYNALOGIN unexpected result for user=%s", userid);
+                                res = send_result(td, 500);
+                        }
+                    }
+				}
 			} else {
 				syslog(LOG_WARNING, "unsupported mode requested");
                         	res = send_result(td, 500);
@@ -433,7 +534,7 @@ void socket_thread_main(apr_thread_t *self, void *data)
 
 			if (ret < 0)
 			{
-				syslog(LOG_ERR, "handshake has failed (%s)\n\n", gnutls_strerror (ret));
+				syslog(LOG_ERR, "handshake has failed with ret %d (%s)\n\n", ret,gnutls_strerror (ret));
 			}
 			*(thread_data->tls_session) = session;
 		}
@@ -547,7 +648,7 @@ int main(int argc, char *argv[])
 	/* Just return an error if a client closes a socket */
 	apr_signal_block(SIGPIPE);
 
-	openlog(argv[0], LOG_PID, LOG_AUTHPRIV);
+	openlog(argv[0], LOG_PID|LOG_PERROR, LOG_AUTHPRIV);
 
 	if((res = apr_pool_create(&pool, NULL)) != APR_SUCCESS)
 	{

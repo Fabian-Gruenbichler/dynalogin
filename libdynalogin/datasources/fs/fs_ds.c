@@ -3,7 +3,7 @@
  *
  *  File format:
  *      userid:scheme:secret:counter:failure-count:
- *          locked:last_success:last_attempt:last_code
+ *          locked:last_success:last_attempt:last_code[:ocra_suite:secret_server:ocra_suite_server]
  *
  *  Potential improvements:
  *   - only return a copy of the user data, rather than the data itself,
@@ -115,6 +115,11 @@ apr_status_t parse_user(dynalogin_user_data_t *user_data, const char *user_recor
 	user_data->last_success=atol(_substrings[field++]);
 	user_data->last_attempt=atol(_substrings[field++]);
 	user_data->last_code=_substrings[field++];
+    if(user_data->scheme == OCRA) {
+        user_data->ocra_suite=_substrings[field++];
+        user_data->secret_server=_substrings[field++];
+        user_data->ocra_suite_server=_substrings[field++];
+    }
 }
 
 apr_status_t load_users(apr_array_header_t **users,
@@ -202,11 +207,21 @@ apr_status_t store_users(apr_array_header_t *users,
 			i < users->nelts && u[i].userid != NULL;
 			i++)
 	{
-		s = apr_psprintf(_pool, "%s:%s:%s:%d:%d:%d:%ld:%ld:%s\n",
-				u[i].userid, get_scheme_name(u[i].scheme), u[i].secret,
-				u[i].counter, u[i].failure_count, u[i].locked,
-				u[i].last_success, u[i].last_attempt,
-				u[i].last_code);
+        if(u[i].scheme==OCRA)
+        {
+    		s = apr_psprintf(_pool, "%s:%s:%s:%d:%d:%d:%ld:%ld:%s:%s:%s:%s\n",
+	    			u[i].userid, get_scheme_name(u[i].scheme), u[i].secret,
+		    		u[i].counter, u[i].failure_count, u[i].locked,
+			    	u[i].last_success, u[i].last_attempt, u[i].last_code, 
+                    u[i].ocra_suite, u[i].secret_server, u[i].ocra_suite_server);
+        } else {
+	    	s = apr_psprintf(_pool, "%s:%s:%s:%d:%d:%d:%ld:%ld:%s\n",
+		    		u[i].userid, get_scheme_name(u[i].scheme), u[i].secret,
+			    	u[i].counter, u[i].failure_count, u[i].locked,
+				    u[i].last_success, u[i].last_attempt,
+    				u[i].last_code);
+        }
+
 		syslog(LOG_DEBUG, "writing: %s", s);
 
 		if((res=apr_file_puts(s, f))!=APR_SUCCESS)

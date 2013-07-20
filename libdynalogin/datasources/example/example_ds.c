@@ -16,9 +16,12 @@ extern dynalogin_datastore_module_t example_ds_module;
 static dynalogin_user_data_t u_tester =
 {
 		"testuser",  // name
-		HOTP,        // scheme, can be HOTP or TOTP
+		OCRA,        // scheme, can be HOTP or TOTP
 		"12345678901234567890", // secret from RFC 4226 test vector
-		0, // counter
+		1, // counter
+        "OCRA-1:HOTP-SHA1-8:C-QH20-T02M",
+        NULL,
+        NULL,
 		0, // failure_count
 		0, // locked
 		0, // last_success

@@ -20,6 +20,9 @@ typedef struct dynalogin_user_data {
 	dynalogin_scheme_t scheme;
 	dynalogin_secret_t secret;
 	dynalogin_counter_t counter;
+    char *ocra_suite;
+    dynalogin_secret_t secret_server;
+    char *ocra_suite_server;
 	int failure_count;
 	int locked;
 	time_t last_success;

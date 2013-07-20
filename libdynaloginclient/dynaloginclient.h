@@ -23,4 +23,9 @@ void dynalogin_session_stop(dynalogin_client_t *session);
 
 int dynalogin_session_authenticate(dynalogin_client_t *session, const char *user, const char *scheme, const char *code);
 
+typedef enum {
+    NUM,
+    HEX,
+    ALPHA
+} dynalogin_challenge_t;
 #endif /* DYNALOGINCLIENT_H_ */

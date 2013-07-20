@@ -14,7 +14,8 @@ CREATE TABLE dynalogin_user (
   last_success datetime,
   last_attempt datetime,
   last_code varchar(32),
-  password varchar(32)
+  password varchar(32),
+  ocra_suite varchar(44)
 );
 
 

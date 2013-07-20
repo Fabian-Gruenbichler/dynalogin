@@ -30,11 +30,13 @@
 #define DB_DSN "DSN=dynalogin;"
 
 #define DB_SELECT "SELECT id, userid, scheme, secret, counter, failure_count, " \
-			"locked, last_success, last_attempt, last_code, password " \
+			"locked, last_success, last_attempt, last_code, password, " \
+            "ocra_suite, secret_server, ocra_suite_server " \
 			"FROM dynalogin_user WHERE userid = ?"
 
 #define DB_UPDATE "UPDATE dynalogin_user SET counter = ?, failure_count = ?, " \
-			"locked = ?, last_success = ?, last_attempt = ?, last_code = ? " \
+			"locked = ?, last_success = ?, last_attempt = ?, last_code = ? , "\
+            "ocra_suite = ?, server_secret = ?, ocra_suite_secret = ? " \
 			"WHERE userid = ?"
 
 extern dynalogin_datastore_module_t odbc_ds_module;
@@ -487,6 +489,9 @@ static void user_fetch(dynalogin_user_data_t **ud, const dynalogin_userid_t user
 			odbc_get_datetime(&(_ud->last_attempt), c->query_stmt, field++, &indicator);
 			odbc_get_string(&(_ud->last_code), c->query_stmt, field++, pool);
 			odbc_get_string(&(_ud->password), c->query_stmt, field++, pool);
+            odbc_get_string(&(_ud->ocra_suite), c->query_stmt, field++, pool);
+            odbc_get_string(&(_ud->secret_server), c->query_stmt, field++, pool);
+            odbc_get_string(&(_ud->ocra_suite_server), c->query_stmt, field++, pool);
 
 			syslog(LOG_DEBUG, "got user %s count %ju", _ud->userid, _ud->counter);
 		}
@@ -574,7 +579,29 @@ static void user_update(dynalogin_user_data_t *ud, apr_pool_t *pool)
 		return;
 	}
 
-	if(odbc_set_string(ud->userid, c->update_stmt, 7, &indicator[7]) !=
+	if(odbc_set_string(ud->ocra_suite, c->update_stmt, 7, &indicator[7]) !=
+			APR_SUCCESS)
+	{
+		odbc_error_cleanup("SQLBindParameter", c);
+		return;
+	}
+		
+    if(odbc_set_string(ud->secret_server, c->update_stmt, 8, &indicator[8]) !=
+			APR_SUCCESS)
+	{
+		odbc_error_cleanup("SQLBindParameter", c);
+		return;
+	}
+
+    if(odbc_set_string(ud->ocra_suite_server, c->update_stmt, 9, &indicator[9]) !=
+			APR_SUCCESS)
+	{
+		odbc_error_cleanup("SQLBindParameter", c);
+		return;
+	}
+
+
+	if(odbc_set_string(ud->userid, c->update_stmt, 10, &indicator[10]) !=
 			APR_SUCCESS)
 	{
 		odbc_error_cleanup("SQLBindParameter", c);

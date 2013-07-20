@@ -199,6 +199,7 @@ dynalogin_result_t dynalogin_authenticate_internal
 	time_t now;
 	dynalogin_counter_t _now, next_counter, totp_counter;
 	int fail_inc = 1, totp_offset;
+    ocra_suite_t ocra_suite_info;
 
 	if(h == NULL || userid == NULL || pvt == NULL)
 		return DYNALOGIN_ERROR;
@@ -282,6 +283,29 @@ dynalogin_result_t dynalogin_authenticate_internal
 		    syslog(LOG_WARNING, "TOTP validation returned offset %d (~%d seconds ahead)",totp_offset,rc*h->totp_x);
 		}
 		break;
+    case OCRA:
+        {
+            time(&now);
+            /* TODO password hash, session info */
+
+            char hexstring[pvt->challenge_length*2+1];
+            oath_bin2hex(pvt->challenge,pvt->challenge_length,hexstring);
+ 
+            rc = oath_ocra_validate(
+                    ud->secret,
+                    strlen(ud->secret),
+                    ud->ocra_suite,
+                    strlen(ud->ocra_suite),
+                    ud->counter,
+                    pvt->challenge,
+                    pvt->challenge_length,
+                    NULL,
+                    NULL,
+                    now,
+                    pvt->extra);
+            next_counter = ud->counter+1;
+        }
+        break;
 	default:
 		syslog(LOG_ERR, "unsupported scheme");
 		fail_inc = 0;
@@ -317,6 +341,27 @@ dynalogin_result_t dynalogin_authenticate
 		return DYNALOGIN_ERROR;
 
 	pvt.extra = code;
+
+	ret = dynalogin_authenticate_internal
+			(h, userid,	scheme, &pvt, oath_callback);
+
+	return ret;
+}
+
+dynalogin_result_t dynalogin_authenticate_challenge
+	(dynalogin_session_t *h, const dynalogin_userid_t userid,
+			dynalogin_scheme_t scheme, const dynalogin_code_t code, 
+            const char *challenge, size_t challenge_length)
+{
+	struct oath_callback_pvt_t pvt;
+	dynalogin_result_t ret;
+
+	if(code == NULL)
+		return DYNALOGIN_ERROR;
+
+	pvt.extra = code;
+    pvt.challenge = challenge;
+    pvt.challenge_length = challenge_length;
 
 	ret = dynalogin_authenticate_internal
 			(h, userid,	scheme, &pvt, oath_callback);
@@ -423,3 +468,34 @@ const char *get_scheme_name(dynalogin_scheme_t scheme)
 			return scheme_names[scheme];
 	return NULL;
 }
+
+char * generate_challenge(dynalogin_session_t *h, char *userid, char *challenge_string, size_t *bin_length) {
+	int rc;
+
+	dynalogin_user_data_t *ud;
+    ocra_suite_t ocra_suite_info;
+    
+    *bin_length=0;
+
+	if(h == NULL || userid == NULL)
+		return NULL;
+
+	h->datasource->user_fetch(&ud, userid, h->pool);
+	if(ud == NULL)
+	{
+		syslog(LOG_ERR, "userid not found: %s", userid);
+		return NULL;
+	}
+    rc = oath_ocra_parse_suite(ud->ocra_suite,strlen(ud->ocra_suite),&ocra_suite_info);
+    syslog(LOG_WARNING,"suite (%d): %s",strlen(ud->ocra_suite),ud->ocra_suite);
+    if(rc != 0)
+    {
+        syslog(LOG_ERR, "malformed OCRA suite for user: %s", userid);
+        return NULL;
+    }
+
+    oath_ocra_generate_challenge(ocra_suite_info.challenge_type,ocra_suite_info.challenge_length,challenge_string);
+
+    return oath_ocra_convert_challenge(ocra_suite_info.challenge_type,challenge_string,bin_length);
+}
+
