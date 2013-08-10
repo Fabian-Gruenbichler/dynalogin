@@ -288,9 +288,6 @@ dynalogin_result_t dynalogin_authenticate_internal
             time(&now);
             /* TODO password hash, session info */
 
-            char hexstring[pvt->challenge_length*2+1];
-            oath_bin2hex(pvt->challenge,pvt->challenge_length,hexstring);
- 
             rc = oath_ocra_validate(
                     ud->secret,
                     strlen(ud->secret),
@@ -348,25 +345,103 @@ dynalogin_result_t dynalogin_authenticate
 	return ret;
 }
 
-dynalogin_result_t dynalogin_authenticate_challenge
-	(dynalogin_session_t *h, const dynalogin_userid_t userid,
-			dynalogin_scheme_t scheme, const dynalogin_code_t code, 
-            const char *challenge, size_t challenge_length)
+dynalogin_result_t dynalogin_authenticate_ocra
+    (dynalogin_session_t *h, const dynalogin_userid_t userid,
+         const dynalogin_code_t code, const char *challenge, 
+         size_t challenge_length)
 {
-	struct oath_callback_pvt_t pvt;
-	dynalogin_result_t ret;
+    struct oath_callback_pvt_t pvt;
+    dynalogin_result_t ret;
 
-	if(code == NULL)
-		return DYNALOGIN_ERROR;
+    if(code == NULL)
+        return DYNALOGIN_ERROR;
 
-	pvt.extra = code;
+    pvt.extra = code;
     pvt.challenge = challenge;
     pvt.challenge_length = challenge_length;
 
-	ret = dynalogin_authenticate_internal
-			(h, userid,	scheme, &pvt, oath_callback);
+    char hexstring[challenge_length*2+1];
+    oath_bin2hex(challenge,challenge_length,hexstring);
+    syslog(LOG_WARNING, "challenges binary length: %d",challenge_length);
+    syslog(LOG_WARNING, "challenges: %s",hexstring);
 
-	return ret;
+    ret = dynalogin_authenticate_internal
+        (h, userid,	OCRA, &pvt, oath_callback);
+
+    return ret;
+}
+
+char * dynalogin_ocra_calculate_server_value
+    (dynalogin_session_t *h, const dynalogin_userid_t userid,
+         const char *challenge, size_t challenge_length) 
+{
+    int rc;
+    dynalogin_user_data_t *ud;
+    dynalogin_result_t res;
+    time_t now;
+    dynalogin_counter_t _now, next_counter, totp_counter;
+    int fail_inc = 1, totp_offset;
+    ocra_suite_t ocra_suite_info;
+    char * server_value = NULL;
+
+    if(h == NULL || userid == NULL)
+        return NULL;
+
+    h->datasource->user_fetch(&ud, userid, h->pool);
+    if(ud == NULL)
+    {
+        syslog(LOG_ERR, "userid not found: %s", userid);
+        return NULL;
+    }
+
+    if(ud->scheme != OCRA)
+    {
+        syslog(LOG_ERR, "scheme mismatch for user %s (expected %s)",
+                userid, get_scheme_name(ud->scheme));
+        return NULL;
+    }
+
+    if(ud->locked != 0)
+    {
+        syslog(LOG_ERR, "account locked: %s", userid);
+        return NULL;
+    }
+
+    time(&now);
+
+    char hexstring[challenge_length*2+1];
+    oath_bin2hex(challenge,challenge_length,hexstring);
+    syslog(LOG_WARNING, "challenges binary length: %d",challenge_length);
+    syslog(LOG_WARNING, "challenges: %s",hexstring);
+
+    rc = oath_ocra_parse_suite(ud->ocra_suite_server,strlen(ud->ocra_suite_server),&ocra_suite_info);
+
+    if(ocra_suite_info.password_hash != OATH_OCRA_HASH_NONE) {
+        syslog(LOG_ERR, "server value calculation shouldn't include password hash");
+        return NULL;
+    }
+
+
+
+    server_value=calloc(ocra_suite_info.digits+1,sizeof(char));
+
+    /* password and session don't make sense here */
+    rc = oath_ocra_generate(
+            ud->secret_server,
+            strlen(ud->secret_server),
+            ud->ocra_suite_server,
+            strlen(ud->ocra_suite_server),
+            ud->counter,
+            challenge,
+            challenge_length,
+            NULL, 
+            NULL,
+            now,
+            server_value);
+    if(rc==OATH_OK)
+        return server_value;
+    else
+        return NULL;
 }
 
 dynalogin_result_t dynalogin_authenticate_digest
@@ -470,24 +545,23 @@ const char *get_scheme_name(dynalogin_scheme_t scheme)
 }
 
 char * generate_challenge(dynalogin_session_t *h, char *userid, char *challenge_string, size_t *bin_length) {
-	int rc;
+    int rc;
 
-	dynalogin_user_data_t *ud;
+    dynalogin_user_data_t *ud;
     ocra_suite_t ocra_suite_info;
-    
+
     *bin_length=0;
 
-	if(h == NULL || userid == NULL)
-		return NULL;
+    if(h == NULL || userid == NULL)
+        return NULL;
 
-	h->datasource->user_fetch(&ud, userid, h->pool);
-	if(ud == NULL)
-	{
-		syslog(LOG_ERR, "userid not found: %s", userid);
-		return NULL;
-	}
+    h->datasource->user_fetch(&ud, userid, h->pool);
+    if(ud == NULL)
+    {
+        syslog(LOG_ERR, "userid not found: %s", userid);
+        return NULL;
+    }
     rc = oath_ocra_parse_suite(ud->ocra_suite,strlen(ud->ocra_suite),&ocra_suite_info);
-    syslog(LOG_WARNING,"suite (%d): %s",strlen(ud->ocra_suite),ud->ocra_suite);
     if(rc != 0)
     {
         syslog(LOG_ERR, "malformed OCRA suite for user: %s", userid);
@@ -498,4 +572,60 @@ char * generate_challenge(dynalogin_session_t *h, char *userid, char *challenge_
 
     return oath_ocra_convert_challenge(ocra_suite_info.challenge_type,challenge_string,bin_length);
 }
+
+char * convert_server_challenge(dynalogin_session_t *h, char *userid,char *challenge_string, size_t *bin_length) {
+    int rc,i;
+
+    dynalogin_user_data_t *ud;
+    ocra_suite_t ocra_suite_info;
+    char *tmp;
+
+    *bin_length=0;
+
+    if(strlen(challenge_string) > 64) {
+        syslog(LOG_ERR, "server challenge longer than 64 characters");
+        return NULL;
+    }
+
+    if(h == NULL || userid == NULL)
+        return NULL;
+
+    h->datasource->user_fetch(&ud, userid, h->pool);
+    if(ud == NULL)
+    {
+        syslog(LOG_ERR, "userid not found: %s", userid);
+        return NULL;
+    }
+    rc = oath_ocra_parse_suite(ud->ocra_suite_server,strlen(ud->ocra_suite_server),&ocra_suite_info);
+    if(rc != 0)
+    {
+        syslog(LOG_ERR, "malformed server OCRA suite for user: %s", userid);
+        return NULL;
+    }
+
+    tmp = challenge_string;
+
+    for(i=0;i<strlen(challenge_string);i++) {
+        switch (ocra_suite_info.challenge_type) {
+            case OATH_OCRA_CHALLENGE_NUM:
+                if(!isdigit(*tmp)) {
+                    syslog(LOG_ERR, "malformed server challenge received from user %s, not all numerical", userid);
+                    return NULL;
+                }
+            case OATH_OCRA_CHALLENGE_HEX:
+                if(!isxdigit(*tmp)) {
+                    syslog(LOG_ERR, "malformed server challenge received from user %s, not all hexadecimal", userid);
+                    return NULL;
+                }
+            case OATH_OCRA_CHALLENGE_ALPHA:
+                if(!isalpha(*tmp)) {
+                    syslog(LOG_ERR, "malformed server challenge received from user %s, not all alphanumerical", userid);
+                    return NULL;
+                }
+        }
+    }
+
+    return oath_ocra_convert_challenge(ocra_suite_info.challenge_type, challenge_string, bin_length);
+}
+
 

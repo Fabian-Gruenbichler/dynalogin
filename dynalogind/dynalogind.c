@@ -242,12 +242,17 @@ void socket_thread_handle(socket_thread_data_t *td)
 	dynalogin_scheme_t scheme;
 	dynalogin_code_t code;
 
-    char challenge[65];
-    char *current_challenge = NULL;
-    size_t current_challenge_bin_length;
-    char *current_user = NULL;
-    char *challenge_reply=NULL;
-    int ret;
+	dynalogin_challenge_t challenge_type;
+	char challenge[129];
+	char *current_challenge = NULL;
+	size_t current_challenge_length;
+	char *current_server_challenge = NULL;
+	size_t current_server_challenge_length;
+	char *current_combined_challenges = NULL;
+	char *current_server_value = NULL;
+	char *current_user = NULL;
+	char *challenge_reply=NULL;
+	int ret;
 
 	char *digest_realm;
 	char *digest_response;
@@ -283,41 +288,86 @@ void socket_thread_handle(socket_thread_data_t *td)
 		if(ntokens < 1)
 		{
 			syslog(LOG_WARNING, "insufficient tokens in query");
-                        res = send_result(td, 500);
+			res = send_result(td, 500);
 		}
 		else if(strcasecmp(argv[0], "QUIT")==0)
 		{
 			send_result(td, 221);
 			return;
 		}
-        else if(strcasecmp(argv[0], "CHALL")==0)
-        {
-            /* User asks for challenge */
-            if(ntokens < 2)
-	        {
-                /* Command too short */
-                syslog(LOG_WARNING, "insufficient tokens in query");
-                res = send_result(td, 500);
-            }
-            if((current_challenge=generate_challenge(td->dynalogin_session,argv[1], challenge, &current_challenge_bin_length))==NULL)
-            {
-                syslog(LOG_ERR, "couldn't generate challenge string, aborting");
-                send_result(td,500);
-                return;
-            }
+		else if(strcasecmp(argv[0], "CHALL")==0)
+		{
+			selected_mode=argv[1];
+			if(strcasecmp(selected_mode, "OCRA")!=0) {
+				syslog(LOG_WARNING, "challenge requested for unsupported mode");
+				res = send_result(td, 500);
+			} else if(strcasecmp(argv[2], "ONE")==0) {
+				/* Client asks for challenge, i.e., one-way authentication */
+				challenge_type = ONE_WAY;
+			} else if(strcasecmp(argv[2], "TWO")==0) {
+				/* Client challenges server, i.e., two-way authentication */
+				challenge_type = TWO_WAY;
+			} else {
+				challenge_type = INVALID;
+				syslog(LOG_WARNING, "challenge type must be either ONE or TWO way");
+				res = send_result(td, 500);
+			}
 
-            challenge_reply=calloc(strlen(challenge)+13,sizeof(char));
-            if((ret=snprintf(challenge_reply,strlen(challenge)+13,"250 CHALL %s\n",challenge))>=strlen(challenge)+14)
-            {
-                syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
-                send_result(td,500);
-                return;
-            }
-            current_user = malloc(sizeof(char)*(strlen(argv[1])+1));
-            strncpy(current_user, argv[1],strlen(argv[1])+1);
-            res = send_answer(td,challenge_reply);
-            free(challenge_reply);
-        }
+			if((challenge_type == ONE_WAY && ntokens < 4) || (challenge_type == TWO_WAY && ntokens < 5 ))
+			{
+				/* Command too short */
+				syslog(LOG_WARNING, "insufficient tokens in query");
+				res = send_result(td, 500);
+			} else if(challenge_type == ONE_WAY) {
+				free(current_server_challenge);
+				current_server_challenge = NULL;
+				if((current_challenge=generate_challenge(td->dynalogin_session,argv[3], challenge, &current_challenge_length))==NULL)
+				{
+					syslog(LOG_ERR, "couldn't generate challenge string, aborting");
+					res = send_result(td,500);
+				} else {
+					challenge_reply=calloc(strlen(challenge)+13,sizeof(char));
+					if((ret=snprintf(challenge_reply,strlen(challenge)+13,"250 CHALL %s\n",challenge))>=strlen(challenge)+14)
+					{
+						syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
+						res = send_result(td,500);
+					} else {
+						current_user = malloc(strlen(argv[3])+1);
+						strncpy(current_user, argv[3],strlen(argv[3])+1);
+						res = send_answer(td,challenge_reply);
+						free(challenge_reply);
+					}
+				}
+			} else if(challenge_type == TWO_WAY) {
+				if((current_server_challenge = convert_server_challenge(td->dynalogin_session,argv[3],argv[4], &current_server_challenge_length))==NULL) {
+					syslog(LOG_ERR, "couldn't convert server challenge string, aborting");
+					res = send_result(td,500);
+				} else if((current_server_value = dynalogin_ocra_calculate_server_value(td->dynalogin_session,argv[3],current_server_challenge,current_server_challenge_length)) == NULL) {
+					syslog(LOG_ERR, "couldn't calculate server value, aborting");
+					free(current_server_challenge);
+					free(current_challenge);
+					current_server_challenge = NULL;
+					current_challenge = NULL;
+					res = send_result(td,500);
+				} else if((current_challenge=generate_challenge(td->dynalogin_session,argv[3], challenge, &current_challenge_length))==NULL) {
+					syslog(LOG_ERR, "couldn't generate challenge string, aborting");
+					res = send_result(td,500);
+				} else {
+					challenge_reply=calloc(strlen(current_server_value)+strlen(challenge)+14,sizeof(char));
+					if((ret=snprintf(challenge_reply,strlen(current_server_value)+strlen(challenge)+14,"250 CHALL %s %s\n",current_server_value,challenge))>=strlen(current_server_value)+strlen(challenge)+15)
+					{
+						syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
+						res=send_result(td,500);
+					} else {
+						current_user = malloc(strlen(argv[3])+1);
+						strncpy(current_user, argv[3],strlen(argv[3])+1);
+						res = send_answer(td,challenge_reply);
+						free(challenge_reply);
+					}
+				}
+			}
+
+		}
         else if(strcasecmp(argv[0], "UDATA")==0)
 		{
 			/* User sending user ID and response value */
@@ -410,7 +460,7 @@ void socket_thread_handle(socket_thread_data_t *td)
 					}
 				}
 			}
-            else if(strcasecmp(selected_mode, "OCRA") == 0)
+			else if(strcasecmp(selected_mode, "OCRA") == 0)
 			{
 				userid=argv[2];
 				scheme = OCRA;
@@ -424,56 +474,88 @@ void socket_thread_handle(socket_thread_data_t *td)
 				else
 				{
 					syslog(LOG_DEBUG, "attempting DYNALOGIN auth for user=%s", userid);
-                    if(current_challenge==NULL || current_user==NULL)
-                    {
-                        syslog(LOG_WARNING, "need to generate challenge before authenticating using OCRA");
-                        res = send_answer(td, "500 cannot authenticate using OCRA without generating a challenge first\n");
-                        free(current_challenge);
-                        free(current_user);
-                        current_user = NULL;
-                        current_challenge = NULL;
-                    } 
-                    else if(strcmp(userid,current_user)!=0) 
-                    {
-                        syslog(LOG_WARNING, "attempted authentication with different user than challenge was requested for: %s vs %s",userid,current_user);
-                        free(current_user);
-                        free(current_challenge);
-                        current_user = NULL;
-                        current_challenge = NULL;
-                        res = send_answer(td, "500 cannot authenticate with different user than challenge requester\n");
-                    } 
-                    else 
-                    {
-                        syslog(LOG_WARNING, "delegating authentication to libdynalogin");
-                        dynalogin_res = dynalogin_authenticate_challenge(td->dynalogin_session,
-                                userid, scheme, code, current_challenge, current_challenge_bin_length);
+					if(current_challenge==NULL || current_user==NULL)
+					{
+						syslog(LOG_WARNING, "need to generate challenge before authenticating using OCRA");
+						res = send_answer(td, "500 cannot authenticate using OCRA without generating a challenge first\n");
+						free(current_challenge);
+						free(current_user);
+						free(current_server_challenge);
+						current_server_challenge = NULL;
+						current_user = NULL;
+						current_challenge = NULL;
+					}
+					else if(strcmp(userid,current_user)!=0)
+					{
+						syslog(LOG_WARNING, "attempted authentication with different user than challenge was requested for: %s vs %s",userid,current_user);
+						free(current_user);
+						free(current_challenge);
+						free(current_server_challenge);
+						current_server_challenge = NULL;
+						current_user = NULL;
+						current_challenge = NULL;
 
-                        free(current_user);
-                        free(current_challenge);
-                        current_challenge=NULL;
-                        current_user=NULL;
+						res = send_answer(td, "500 cannot authenticate with different user than challenge requester\n");
+					}
+					else
+					{
+						if(current_server_challenge==NULL) {
+							syslog(LOG_WARNING, "delegating one-way authentication to libdynalogin");
+							dynalogin_res = dynalogin_authenticate_ocra(td->dynalogin_session,
+									userid, code, current_challenge, current_challenge_length);
+							free(current_server_challenge);
+							current_server_challenge = NULL;
+						} else {
+							syslog(LOG_WARNING, "two-way authentication requested, combining challenges");
+							current_combined_challenges = malloc(current_challenge_length+current_server_challenge_length);
+							if(current_combined_challenges == NULL) {
+								syslog(LOG_ERR, "couldn't allocate memory for combined challenges");
+								free(current_server_challenge);
+								current_server_challenge=NULL;
+								res = send_result(td,500);
+								dynalogin_res = DYNALOGIN_ERROR;
+							} else {
+								memcpy(current_combined_challenges,current_server_challenge,current_server_challenge_length);
+								memcpy(current_combined_challenges+current_server_challenge_length,current_challenge,current_challenge_length);
 
-                        switch(dynalogin_res)
-                        {
-                            case DYNALOGIN_SUCCESS:
-                                syslog(LOG_DEBUG, "DYNALOGIN success for user=%s", userid);
-                                res = send_result(td, 250);
-                                break;
-                            case DYNALOGIN_DENY:
-                                /* User unknown or bad password */
-                                syslog(LOG_DEBUG, "DYNALOGIN denied for user=%s", userid);
-                                res = send_result(td, 401);
-                                break;
-                            case DYNALOGIN_ERROR:
-                                /* Error connecting to DB, etc */
-                                syslog(LOG_DEBUG, "DYNALOGIN error for user=%s", userid);
-                                res = send_result(td, 500);
-                                break;
-                            default:
-                                syslog(LOG_DEBUG, "DYNALOGIN unexpected result for user=%s", userid);
-                                res = send_result(td, 500);
-                        }
-                    }
+								syslog(LOG_WARNING, "delegating two-way authentication to libdynalogin");
+
+								dynalogin_res = dynalogin_authenticate_ocra
+									(td->dynalogin_session,userid, code, 
+									 current_combined_challenges, 
+									 current_challenge_length+current_server_challenge_length);
+								free(current_combined_challenges);
+								free(current_server_challenge);
+								current_server_challenge=NULL;
+							}
+						}
+
+						free(current_user);
+						free(current_challenge);
+						current_challenge=NULL;
+						current_user=NULL;
+
+						switch(dynalogin_res)
+						{
+							case DYNALOGIN_SUCCESS:
+								syslog(LOG_DEBUG, "DYNALOGIN success for user=%s", userid);
+								res = send_result(td, 250);
+								break;
+							case DYNALOGIN_DENY:
+								/* User unknown or bad password */
+								syslog(LOG_DEBUG, "DYNALOGIN denied for user=%s", userid);
+								res = send_result(td, 401);
+								break;
+							case DYNALOGIN_ERROR:
+								/* Error connecting to DB, etc */
+								syslog(LOG_DEBUG, "DYNALOGIN error for user=%s", userid);
+								res = send_result(td, 500);
+								break;
+							default:
+								syslog(LOG_DEBUG, "DYNALOGIN unexpected result for user=%s", userid);
+								res = send_result(td, 500);
+						}
+					}
 				}
 			} else {
 				syslog(LOG_WARNING, "unsupported mode requested");

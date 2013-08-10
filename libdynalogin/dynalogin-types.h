@@ -25,4 +25,10 @@ typedef enum dynalogin_scheme {
     OCRA = 2
 } dynalogin_scheme_t;
 
+typedef enum dynalogin_challenge {
+    INVALID = 0,
+    ONE_WAY = 1,
+    TWO_WAY = 2
+} dynalogin_challenge_t;
+
 #endif /* DYNALOGINTYPES_H_ */

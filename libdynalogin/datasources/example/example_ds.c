@@ -19,7 +19,9 @@ static dynalogin_user_data_t u_tester =
 		OCRA,        // scheme, can be HOTP or TOTP
 		"12345678901234567890", // secret from RFC 4226 test vector
 		1, // counter
-        "OCRA-1:HOTP-SHA1-8:C-QH20-T02M",
+        "OCRA-1:HOTP-SHA1-8:C-QH20-T05M",
+        "09876543210987654321", //server secret
+        "OCRA-1:HOTP-SHA1-8:QH08", //server ocra suite
         NULL,
         NULL,
 		0, // failure_count
