@@ -582,11 +582,6 @@ char * convert_server_challenge(dynalogin_session_t *h, char *userid,char *chall
 
     *bin_length=0;
 
-    if(strlen(challenge_string) > 64) {
-        syslog(LOG_ERR, "server challenge longer than 64 characters");
-        return NULL;
-    }
-
     if(h == NULL || userid == NULL)
         return NULL;
 
@@ -602,6 +597,11 @@ char * convert_server_challenge(dynalogin_session_t *h, char *userid,char *chall
         syslog(LOG_ERR, "malformed server OCRA suite for user: %s", userid);
         return NULL;
     }
+    
+    if(strlen(challenge_string) != ocra_suite_info.challenge_length) {
+        syslog(LOG_ERR, "server challenge has invalid length (expected %d, has %d)",ocra_suite_info.challenge_length,strlen(challenge_string));
+        return NULL;
+    }   
 
     tmp = challenge_string;
 

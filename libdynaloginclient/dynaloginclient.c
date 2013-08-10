@@ -137,6 +137,7 @@ int dynalogin_session_one_way_ocra_challenge(dynalogin_client_t *session, const 
     }
     strcpy(challenge,line+10);
     free(line);
+	return 0;
 }
 
 int dynalogin_session_two_way_ocra_challenge(dynalogin_client_t *session, const char *user, char *server_challenge, char *server_value, char *client_challenge) {
