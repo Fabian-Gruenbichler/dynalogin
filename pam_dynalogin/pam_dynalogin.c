@@ -65,7 +65,7 @@
 #define MIN_OTP_LEN 6
 #define MAX_OTP_LEN 8
 
-const char *schemes[] = { "HOTP", "TOTP", NULL };
+const char *schemes[4] = { "HOTP", "OCRA", "TOTP", NULL };
 
 struct cfg
 {
@@ -82,10 +82,11 @@ struct cfg
 static const char *
 get_scheme_if_valid(const char *_scheme)
 {
-	const char *p;
-	for(p = schemes[0]; p != NULL; p++)
-		if(strcasecmp(p, _scheme) == 0)
-			return p;
+	int i;
+	for(i = 0; schemes[i] != NULL; i++) {
+		if(strcasecmp(schemes[i], _scheme) == 0)
+			return schemes[i];
+	}
 	return NULL;
 }
 
@@ -216,8 +217,25 @@ pam_sm_authenticate (pam_handle_t * pamh,
 
 		pmsg[0] = &msg[0];
 		{
-			const char *query_template = "One-time password (OATH) for `%s': ";
-			size_t len = strlen (query_template) + strlen (user);
+			char *query_template; //removed const?
+			char challenge_string[65];
+			size_t len;
+			if(strcasecmp(cfg.scheme,"OCRA")==0)
+			{
+				retval = dynalogin_session_one_way_ocra_challenge(session, user, challenge_string);
+				if (retval != 0)
+				{
+					DBG (("getting one way challenge failed"));
+					goto done;
+				} else {
+					DBG (("challenge received: %s", challenge_string));
+				}
+				query_template = "One-time password (OCRA) for `%s', challenge `%s': ";
+				len = strlen (query_template) + strlen (user) + strlen(challenge_string);
+			} else {
+				query_template = "One-time password (OATH) for `%s': ";
+				len = strlen (query_template) + strlen (user);
+			}
 			size_t wrote;
 
 			query_prompt = malloc (len);
@@ -227,7 +245,12 @@ pam_sm_authenticate (pam_handle_t * pamh,
 				goto done;
 			}
 
-			wrote = snprintf (query_prompt, len, query_template, user);
+			if(strcasecmp(cfg.scheme,"OCRA")==0)
+			{
+				wrote = snprintf (query_prompt, len, query_template, user, challenge_string);
+			} else {
+				wrote = snprintf (query_prompt, len, query_template, user);
+			}
 			if (wrote < 0 || wrote >= len)
 			{
 				retval = PAM_BUF_ERR;
