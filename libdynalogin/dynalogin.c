@@ -598,8 +598,8 @@ char * convert_server_challenge(dynalogin_session_t *h, char *userid,char *chall
         return NULL;
     }
     
-    if(strlen(challenge_string) != ocra_suite_info.challenge_length) {
-        syslog(LOG_ERR, "server challenge has invalid length (expected %d, has %d)",ocra_suite_info.challenge_length,strlen(challenge_string));
+    if(strlen(challenge_string) > ocra_suite_info.challenge_length) {
+        syslog(LOG_ERR, "server challenge too long (expected max. length %d, is %d)",ocra_suite_info.challenge_length,strlen(challenge_string));
         return NULL;
     }   
 
