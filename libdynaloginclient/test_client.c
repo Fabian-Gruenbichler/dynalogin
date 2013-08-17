@@ -11,8 +11,11 @@ int main(int argc, char *argv[])
 	int port;
 	char *user;
 	char *scheme;
+	char *ocra_mode;
 	char code_buf[32];
-	char challenge_string[65];
+	char s_challenge_string[65];
+	char s_code[32];
+	char c_challenge_string[65];
 	dynalogin_client_t *session;
 	int ret;
 
@@ -26,6 +29,8 @@ int main(int argc, char *argv[])
 	port = atoi(argv[2]);
 	user = argv[3];
 	scheme = argv[4];
+	ocra_mode = argv[5];
+
 
 	session = dynalogin_session_start(host, port, NULL);
 
@@ -37,12 +42,25 @@ int main(int argc, char *argv[])
 	
 	if(strcasecmp(scheme,"OCRA")==0)
 	{
-		ret = dynalogin_session_one_way_ocra_challenge(session, user, challenge_string);
-		if(ret!=0)
-			printf("failed to get challenge from server\n");
-		else
-			printf("challenge is: %s\n",challenge_string);
-	}
+		if(strcasecmp(ocra_mode,"one")==0)
+		{
+			ret = dynalogin_session_one_way_ocra_challenge(session, user, c_challenge_string);
+			if(ret!=0)
+				printf("failed to get challenge from server\n");
+			else
+				printf("Challenge is: %s\n",c_challenge_string);
+		} else {	
+			printf("Enter server challenge for mutual authentication\n");
+			scanf("%s", s_challenge_string);
+			printf("Server challenge: %s\n",s_challenge_string);
+			ret = dynalogin_session_two_way_ocra_challenge(session, user, s_challenge_string, s_code, c_challenge_string);
+			if(ret!=0)
+				printf("Failed to get server value\n");
+			else
+				printf("Server's OCRA value is: %s\nClient challenge is: %s\n",s_code,c_challenge_string);
+
+		}
+	}	
 
 	printf("Enter the code for %s: ", (char *)user);
 	scanf("%s", code_buf);

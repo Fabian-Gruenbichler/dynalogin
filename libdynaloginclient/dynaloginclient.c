@@ -143,6 +143,9 @@ int dynalogin_session_one_way_ocra_challenge(dynalogin_client_t *session, const 
 int dynalogin_session_two_way_ocra_challenge(dynalogin_client_t *session, const char *user, char *server_challenge, char *server_value, char *client_challenge) {
     char msg[MAX_BUF];
     char *line;
+	char *save_ptr;
+	char *tmp;
+
     int ret, reponse_code;
 
     if(snprintf(msg, MAX_BUF-1, "CHALL OCRA TWO %s %s\n",user, server_challenge) >= MAX_BUF)
@@ -153,20 +156,26 @@ int dynalogin_session_two_way_ocra_challenge(dynalogin_client_t *session, const 
     write_line (session, msg);
 
     line = read_line (session);
-    if(strncmp(line,"250 VALUE",9)!=0) {
-        syslog(LOG_ERR, "server didn't return generated value for server challenge, auth failed: %s",line);
-        return -1;
-    }
-    strcpy(server_value,line+10);
-    free(line);
 
-    line = read_line (session);
     if(strncmp(line,"250 CHALL",9)!=0) {
         syslog(LOG_ERR, "server didn't return challenge upon request, auth failed: %s", line);
         return -1;
     }
-    
-    strcpy(client_challenge,line+10);
+
+	tmp = strtok_r(line+10," ",&save_ptr);
+	if(tmp!=NULL)
+		strcpy(server_value,tmp);
+	else {
+		syslog(LOG_ERR, "server didn't return a server value during mutual authentication, auth failed: %s", line);
+		return -1;
+	}
+    tmp = strtok_r(NULL," ",&save_ptr);
+	if(tmp!=NULL)
+		strcpy(client_challenge,tmp);
+	else {
+		syslog(LOG_ERR, "server didn't return a client challenge during mutual authentication, auth failed: %s", line);
+		return -1;
+	}
     free(line);
 }
 
