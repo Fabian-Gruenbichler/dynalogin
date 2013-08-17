@@ -20,7 +20,7 @@
  */
 
 #define FS_DB LOCALSTATEDIR "/dynalogin-passwd"
-#define FS_LINEBUF_LEN 255
+#define FS_LINEBUF_LEN 511
 #define FS_FIELD_SEP ":"
 #define ERRBUFLEN 1024
 

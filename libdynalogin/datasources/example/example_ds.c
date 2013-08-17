@@ -22,8 +22,6 @@ static dynalogin_user_data_t u_tester =
         "OCRA-1:HOTP-SHA1-8:C-QH20-T05M",
         "09876543210987654321", //server secret
         "OCRA-1:HOTP-SHA1-8:QH08", //server ocra suite
-        NULL,
-        NULL,
 		0, // failure_count
 		0, // locked
 		0, // last_success
