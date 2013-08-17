@@ -612,16 +612,19 @@ char * convert_server_challenge(dynalogin_session_t *h, char *userid,char *chall
                     syslog(LOG_ERR, "malformed server challenge received from user %s, not all numerical", userid);
                     return NULL;
                 }
+				break;
             case OATH_OCRA_CHALLENGE_HEX:
                 if(!isxdigit(*tmp)) {
                     syslog(LOG_ERR, "malformed server challenge received from user %s, not all hexadecimal", userid);
                     return NULL;
                 }
+				break;
             case OATH_OCRA_CHALLENGE_ALPHA:
-                if(!isalpha(*tmp)) {
+                if(!isalnum(*tmp)) {
                     syslog(LOG_ERR, "malformed server challenge received from user %s, not all alphanumerical", userid);
                     return NULL;
                 }
+				break;
         }
     }
 
