@@ -416,6 +416,11 @@ char * dynalogin_ocra_calculate_server_value
 
     rc = oath_ocra_parse_suite(ud->ocra_suite_server,strlen(ud->ocra_suite_server),&ocra_suite_info);
 
+	if(rc != OATH_OK) {
+		syslog(LOG_ERR, "couldn't parse server's ocra_suite for user %s", userid);
+		return NULL;
+	}
+
     if(ocra_suite_info.password_hash != OATH_OCRA_HASH_NONE) {
         syslog(LOG_ERR, "server value calculation shouldn't include password hash");
         return NULL;
