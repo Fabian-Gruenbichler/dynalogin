@@ -600,7 +600,7 @@ void socket_thread_main(apr_thread_t *self, void *data)
 {
 	int ret = 0;
 	socket_thread_data_t *thread_data = (socket_thread_data_t*)data;
-	gnutls_session_t session;
+	gnutls_session_t session = NULL;
 	apr_os_sock_t sock;
 
 	if(tls_cert != NULL)
@@ -638,12 +638,12 @@ void socket_thread_main(apr_thread_t *self, void *data)
 	if(ret >= 0)
 	{
 		socket_thread_handle(thread_data);
-		if(thread_data->tls_session != NULL)
+		if(session != NULL && thread_data->tls_session != NULL)
 			gnutls_bye(session, GNUTLS_SHUT_WR);
 	}
 
 	apr_socket_close(thread_data->socket);
-	if(thread_data->tls_session != NULL)
+	if(session != NULL && thread_data->tls_session != NULL)
 		gnutls_deinit (session);
 	apr_pool_destroy(thread_data->pool);
 	syslog(LOG_INFO, "client connection closed");
