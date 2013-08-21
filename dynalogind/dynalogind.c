@@ -338,8 +338,8 @@ void socket_thread_handle(socket_thread_data_t *td)
 						current_user = malloc(strlen(argv[3])+1);
 						strncpy(current_user, argv[3],strlen(argv[3])+1);
 						res = send_answer(td,challenge_reply);
-						free(challenge_reply);
 					}
+					free(challenge_reply);
 				}
 			} else if(challenge_type == TWO_WAY) {
 				if((current_server_challenge = convert_server_challenge(td->dynalogin_session,argv[3],argv[4], &current_server_challenge_length))==NULL) {
@@ -365,8 +365,8 @@ void socket_thread_handle(socket_thread_data_t *td)
 						current_user = malloc(strlen(argv[3])+1);
 						strncpy(current_user, argv[3],strlen(argv[3])+1);
 						res = send_answer(td,challenge_reply);
-						free(challenge_reply);
 					}
+					free(challenge_reply);
 				}
 			}
 
@@ -573,12 +573,19 @@ void socket_thread_handle(socket_thread_data_t *td)
 		{
 			syslog(LOG_ERR, "failed to send response: %s",
 					apr_strerror(res, errbuf, ERRBUFLEN));
+			free(current_user);
+			free(current_challenge);
+			free(current_server_challenge);
+
 			return;
 		}
 
 		apr_pool_destroy(query_pool);
 		if((res=apr_pool_create(&query_pool, td->pool))!=APR_SUCCESS)
 		{
+			free(current_user);
+			free(current_challenge);
+			free(current_server_challenge);
 			syslog(LOG_ERR, "failed to create query pool: %s",
 							apr_strerror(res, errbuf, ERRBUFLEN));
 			return;
