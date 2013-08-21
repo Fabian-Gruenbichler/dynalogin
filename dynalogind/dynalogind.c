@@ -296,7 +296,12 @@ void socket_thread_handle(socket_thread_data_t *td)
 		else if(strcasecmp(argv[0], "CHALL")==0)
 		{
 			selected_mode=argv[1];
-			if(strcasecmp(selected_mode, "OCRA")!=0) {
+			if(ntokens < 2)
+			{
+				syslog(LOG_WARNING, "insufficient tokens in query");
+				res = send_result(td, 500);
+			}
+			else if(strcasecmp(selected_mode, "OCRA")!=0) {
 				syslog(LOG_WARNING, "challenge requested for unsupported mode");
 				res = send_result(td, 500);
 			} else if(strcasecmp(argv[2], "ONE")==0) {
