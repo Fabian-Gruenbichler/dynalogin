@@ -241,7 +241,7 @@ void socket_thread_handle(socket_thread_data_t *td)
 	dynalogin_scheme_t scheme;
 	dynalogin_code_t code;
 
-	dynalogin_challenge_t challenge_type;
+	dynalogin_challenge_t challenge_type = INVALID;
 	char challenge[129];
 	char *current_challenge = NULL;
 	size_t current_challenge_length;
