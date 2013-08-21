@@ -156,7 +156,7 @@ pam_sm_authenticate (pam_handle_t * pamh,
 		int flags, int argc, const char **argv)
 {
 	int retval, rc;
-	dynalogin_client_t *session;
+	dynalogin_client_t *session = NULL;
 	const char *user = NULL;
 	const char *password = NULL;
 	char otp[MAX_OTP_LEN + 1];
@@ -326,7 +326,8 @@ pam_sm_authenticate (pam_handle_t * pamh,
 	retval = PAM_SUCCESS;
 
 	done:
-	dynalogin_session_stop(session);
+	if(session!=NULL)
+		dynalogin_session_stop(session);
 	free (query_prompt);
 	free (onlypasswd);
 	if (cfg.alwaysok && retval != PAM_SUCCESS)
