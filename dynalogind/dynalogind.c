@@ -466,7 +466,6 @@ void socket_thread_handle(socket_thread_data_t *td)
 			else if(strcasecmp(selected_mode, "OCRA") == 0)
 			{
 				userid=argv[2];
-				scheme = OCRA;
 				code=argv[3];
 				if(ntokens < 4)
 				{
@@ -515,7 +514,6 @@ void socket_thread_handle(socket_thread_data_t *td)
 								syslog(LOG_ERR, "couldn't allocate memory for combined challenges");
 								free(current_server_challenge);
 								current_server_challenge=NULL;
-								res = send_result(td,500);
 								dynalogin_res = DYNALOGIN_ERROR;
 							} else {
 								memcpy(current_combined_challenges,current_server_challenge,current_server_challenge_length);
