@@ -323,8 +323,8 @@ dynalogin_client_t *dynalogin_session_start(const char *server, int port, const 
 			syslog(LOG_DEBUG, "connected to dynalogin server: %s", line);
 			free(line);
 			return session;
-		}
-		if(strlen(line) > 3 && line[3] == '-')
+		} 
+		else if(strlen(line) > 3 && line[3] == '-')
 		{
 			free(line);
 			line = read_line(session);
