@@ -786,7 +786,7 @@ int main(int argc, char *argv[])
 	GET_STRING_PARAM_DEF(bind_address, config, DYNALOGIND_PARAM_BIND_ADDR, DEFAULT_BIND_ADDR)
 	GET_INT_PARAM_DEF(bind_port, config, DYNALOGIND_PARAM_BIND_PORT, DEFAULT_BIND_PORT)
 	if((res=apr_sockaddr_info_get(&sa, bind_address, APR_UNSPEC,
-			bind_port, APR_IPV4_ADDR_OK || APR_IPV6_ADDR_OK, pool))!=APR_SUCCESS)
+			bind_port, APR_IPV4_ADDR_OK | APR_IPV6_ADDR_OK, pool))!=APR_SUCCESS)
 	{
 		syslog(LOG_ERR, "failed to resolve bind address: %s",
 				apr_strerror(res, errbuf, ERRBUFLEN));
