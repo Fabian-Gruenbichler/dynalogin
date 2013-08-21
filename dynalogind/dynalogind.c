@@ -375,7 +375,7 @@ void socket_thread_handle(socket_thread_data_t *td)
 		{
 			/* User sending user ID and response value */
 			selected_mode=argv[1];
-			if(ntokens < 1)
+			if(ntokens < 2)
 			{
                 /* Command too short */
                 syslog(LOG_WARNING, "insufficient tokens in query");
