@@ -228,7 +228,6 @@ void socket_thread_handle(socket_thread_data_t *td)
 	char *buf;
 	char errbuf[ERRBUFLEN + 1];
 	apr_size_t bufsize = 1024;
-	apr_size_t readsize = bufsize;
 	char **argv;
 	apr_status_t res;
 	dynalogin_result_t dynalogin_res;
@@ -271,7 +270,6 @@ void socket_thread_handle(socket_thread_data_t *td)
 		return;
 	}
 
-	readsize = bufsize;
 	res = read_line(query_pool, td, &buf, bufsize);
 	while(res == APR_SUCCESS || res == APR_EOF)
 	{
