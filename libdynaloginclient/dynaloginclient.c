@@ -133,6 +133,7 @@ int dynalogin_session_one_way_ocra_challenge(dynalogin_client_t *session, const 
     line = read_line (session);
     if(strncmp(line,"250 CHALL",9)!=0) {
         syslog(LOG_ERR, "server didn't return challenge upon request, auth failed: %s", line);
+		free(line);
         return -1;
     }
     strcpy(challenge,line+10);
@@ -159,6 +160,7 @@ int dynalogin_session_two_way_ocra_challenge(dynalogin_client_t *session, const 
 
     if(strncmp(line,"250 CHALL",9)!=0) {
         syslog(LOG_ERR, "server didn't return challenge upon request, auth failed: %s", line);
+		free(line);
         return -1;
     }
 
@@ -167,6 +169,7 @@ int dynalogin_session_two_way_ocra_challenge(dynalogin_client_t *session, const 
 		strcpy(server_value,tmp);
 	else {
 		syslog(LOG_ERR, "server didn't return a server value during mutual authentication, auth failed: %s", line);
+		free(line);
 		return -1;
 	}
     tmp = strtok_r(NULL," ",&save_ptr);
@@ -174,6 +177,7 @@ int dynalogin_session_two_way_ocra_challenge(dynalogin_client_t *session, const 
 		strcpy(client_challenge,tmp);
 	else {
 		syslog(LOG_ERR, "server didn't return a client challenge during mutual authentication, auth failed: %s", line);
+		free(line);
 		return -1;
 	}
     free(line);
@@ -197,6 +201,7 @@ int dynalogin_session_authenticate(dynalogin_client_t *session, const char *user
 	if(ret < 3)
 	{
 		syslog(LOG_ERR, "auth response too short");
+		free(line);
 		return -1;
 	}
 	line[3] = 0;
