@@ -85,7 +85,7 @@ void extract_error(
 	SQLRETURN ret;
 
 	apr_pool_t *_pool;
-	char *errmsg, *errmsgs = NULL;
+	char *errmsgs = NULL;
 
 	if(apr_pool_create(&_pool, pool) != APR_SUCCESS)
 	{
@@ -95,22 +95,28 @@ void extract_error(
 
 	do
 	{
+		char *errmsg = NULL;
 		ret = SQLGetDiagRec(type, handle, ++i, state, &native, text,
 				sizeof(text), &len );
-		if (SQL_SUCCEEDED(ret))
+		if (SQL_SUCCEEDED(ret)) {
 			errmsg = apr_psprintf(_pool, "[ %s:%ld:%ld:%s ]",
 					state, i, native, text);
 
-		if(errmsgs != NULL) {
-			errmsgs = apr_pstrcat(_pool, errmsgs, ", ", NULL);
-			errmsgs = apr_pstrcat(_pool, errmsgs, errmsg, NULL);
+			if(errmsgs != NULL) {
+				errmsgs = apr_pstrcat(_pool, errmsgs, ", ", NULL);
+				errmsgs = apr_pstrcat(_pool, errmsgs, errmsg, NULL);
+			}
+			else
+			{
+				errmsgs = errmsg;
+			}
 		}
-		else
-			errmsgs = errmsg;
 	}
 	while( ret == SQL_SUCCESS );
-
-	syslog(LOG_ERR, "ODBC call %s failed: %s", fn, errmsgs);
+	if(errmsgs == NULL)
+		syslog(LOG_ERR, "ODBC call %s failed, could not extract error message");
+	else
+		syslog(LOG_ERR, "ODBC call %s failed: %s", fn, errmsgs);
 	apr_pool_destroy(_pool);
 }
 
