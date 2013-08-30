@@ -345,28 +345,57 @@ void socket_thread_handle(socket_thread_data_t *td)
 				if((current_server_challenge = convert_server_challenge(td->dynalogin_session,argv[3],argv[4], &current_server_challenge_length))==NULL) {
 					syslog(LOG_ERR, "couldn't convert server challenge string, aborting");
 					res = send_result(td,500);
-				} else if((current_server_value = dynalogin_ocra_calculate_server_value(td->dynalogin_session,argv[3],current_server_challenge,current_server_challenge_length)) == NULL) {
-					syslog(LOG_ERR, "couldn't calculate server value, aborting");
-					free(current_server_challenge);
-					free(current_challenge);
-					current_server_challenge = NULL;
-					current_challenge = NULL;
-					res = send_result(td,500);
 				} else if((current_challenge=generate_challenge(td->dynalogin_session,argv[3], challenge, &current_challenge_length))==NULL) {
+					free(current_server_challenge);
+					current_server_challenge = NULL;
 					syslog(LOG_ERR, "couldn't generate challenge string, aborting");
 					res = send_result(td,500);
 				} else {
-					challenge_reply=calloc(strlen(current_server_value)+strlen(challenge)+14,sizeof(char));
-					if((ret=snprintf(challenge_reply,strlen(current_server_value)+strlen(challenge)+14,"250 CHALL %s %s\n",current_server_value,challenge))>=strlen(current_server_value)+strlen(challenge)+15)
-					{
-						syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
-						res=send_result(td,500);
+					current_combined_challenges = malloc(current_server_challenge_length+current_challenge_length);
+					if(current_combined_challenges == NULL) {
+						syslog(LOG_ERR, "couldn't allocate memory for challenges");
+						free(current_server_challenge);
+						free(current_challenge);
+						current_server_challenge = NULL;
+						current_challenge = NULL;
+						res = send_result(td,500);
 					} else {
-						current_user = malloc(strlen(argv[3])+1);
-						strncpy(current_user, argv[3],strlen(argv[3])+1);
-						res = send_answer(td,challenge_reply);
+						memcpy(current_combined_challenges,current_challenge,current_challenge_length);
+						memcpy(current_combined_challenges+current_challenge_length,current_server_challenge, current_server_challenge_length);
+						if((current_server_value = dynalogin_ocra_calculate_server_value( td->dynalogin_session, argv[3], current_combined_challenges, current_server_challenge_length+current_challenge_length)
+						   ) == NULL) 
+						{
+							syslog(LOG_ERR, "couldn't calculate server value, aborting");
+							free(current_server_challenge);
+							free(current_challenge);
+							free(current_combined_challenges);
+							current_server_challenge = NULL;
+							current_combined_challenges = NULL;
+							current_challenge = NULL;
+							res = send_result(td,500);
+						} else {
+							free(current_combined_challenges);
+							current_combined_challenges = NULL;
+							challenge_reply=calloc(strlen(current_server_value)+strlen(challenge)+14,sizeof(char));
+							if((ret=snprintf(
+											challenge_reply,
+											strlen(current_server_value)+strlen(challenge)+14,
+											"250 CHALL %s %s\n",
+											current_server_value,
+											challenge))
+									>=
+									strlen(current_server_value)+strlen(challenge)+15)
+							{
+								syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
+								res=send_result(td,500);
+							} else {
+								current_user = malloc(strlen(argv[3])+1);
+								strncpy(current_user, argv[3],strlen(argv[3])+1);
+								res = send_answer(td,challenge_reply);
+							}
+							free(challenge_reply);
+						}
 					}
-					free(challenge_reply);
 				}
 			}
 
@@ -794,7 +823,7 @@ int main(int argc, char *argv[])
 	GET_STRING_PARAM_DEF(bind_address, config, DYNALOGIND_PARAM_BIND_ADDR, DEFAULT_BIND_ADDR)
 	GET_INT_PARAM_DEF(bind_port, config, DYNALOGIND_PARAM_BIND_PORT, DEFAULT_BIND_PORT)
 	if((res=apr_sockaddr_info_get(&sa, bind_address, APR_UNSPEC,
-			bind_port, APR_IPV4_ADDR_OK | APR_IPV6_ADDR_OK, pool))!=APR_SUCCESS)
+			bind_port, APR_IPV4_ADDR_OK || APR_IPV6_ADDR_OK, pool))!=APR_SUCCESS)
 	{
 		syslog(LOG_ERR, "failed to resolve bind address: %s",
 				apr_strerror(res, errbuf, ERRBUFLEN));
