@@ -199,7 +199,7 @@ dynalogin_result_t dynalogin_authenticate_internal
 	time_t now;
 	dynalogin_counter_t _now, next_counter, totp_counter;
 	int fail_inc = 1, totp_offset;
-    ocra_suite_t ocra_suite_info;
+    oath_ocra_suite_t ocra_suite_info;
 
 	if(h == NULL || userid == NULL || pvt == NULL)
 		return DYNALOGIN_ERROR;
@@ -381,7 +381,7 @@ char * dynalogin_ocra_calculate_server_value
     time_t now;
     dynalogin_counter_t _now, next_counter, totp_counter;
     int fail_inc = 1, totp_offset;
-    ocra_suite_t ocra_suite_info;
+    oath_ocra_suite_t ocra_suite_info;
     char * server_value = NULL;
 
     if(h == NULL || userid == NULL)
@@ -553,7 +553,7 @@ char * generate_challenge(dynalogin_session_t *h, char *userid, char *challenge_
     int rc;
 
     dynalogin_user_data_t *ud;
-    ocra_suite_t ocra_suite_info;
+    oath_ocra_suite_t ocra_suite_info;
 
     *bin_length=0;
 
@@ -582,7 +582,7 @@ char * convert_server_challenge(dynalogin_session_t *h, char *userid,char *chall
     int rc,i;
 
     dynalogin_user_data_t *ud;
-    ocra_suite_t ocra_suite_info;
+    oath_ocra_suite_t ocra_suite_info;
     char *tmp;
 
     *bin_length=0;
