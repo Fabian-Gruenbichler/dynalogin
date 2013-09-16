@@ -42,8 +42,8 @@ dynalogin_result_t dynalogin_authenticate
 
 dynalogin_result_t dynalogin_authenticate_ocra
 	(dynalogin_session_t *h, const dynalogin_userid_t userid,
-			const dynalogin_code_t code, const char *challenge, 
-            size_t challenge_length);
+			const dynalogin_code_t code, const char **challenges, 
+			size_t challenge_count);
 
 dynalogin_result_t dynalogin_authenticate_digest
         (dynalogin_session_t *h, const dynalogin_userid_t userid,
@@ -56,14 +56,11 @@ dynalogin_result_t dynalogin_read_config_from_file
 dynalogin_scheme_t get_scheme_by_name(const char *scheme_name);
 const char *get_scheme_name(dynalogin_scheme_t scheme);
 
-char *generate_challenge(dynalogin_session_t *h, char *userid, 
-            char *challenge, size_t *bin_length);
-
-char *convert_server_challenge(dynalogin_session_t *h, char *userid, 
-            char *challenge_string, size_t *bin_length);
+dynalogin_result_t generate_challenge(dynalogin_session_t *h, char *userid, 
+            char *challenge_string);
 
 char *dynalogin_ocra_calculate_server_value
         (dynalogin_session_t *h, const dynalogin_userid_t userid, 
-            const char *challenge, size_t challenge_length);
+            const char **challenge,size_t challenges_count);
 
 #endif /* DYNALOGIN_H_ */

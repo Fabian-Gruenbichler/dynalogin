@@ -11,8 +11,8 @@ struct oath_callback_pvt_t
 	const void *extra;
     const char *password;
     char *validated_code;
-    const char *challenge;
-    size_t challenge_length;
+    const char **challenges;
+    size_t challenge_count;
 };
 
 #endif /* DYNALOGIN_INTERNAL_H_ */

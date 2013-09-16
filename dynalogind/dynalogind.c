@@ -242,12 +242,9 @@ void socket_thread_handle(socket_thread_data_t *td)
 	dynalogin_code_t code;
 
 	dynalogin_challenge_t challenge_type = INVALID;
-	char challenge[129];
-	char *current_challenge = NULL;
-	size_t current_challenge_length;
-	char *current_server_challenge = NULL;
-	size_t current_server_challenge_length;
-	char *current_combined_challenges = NULL;
+	char current_client_challenge[65];
+	char current_server_challenge[65];
+	const char *current_challenges[2];
 	char *current_server_value = NULL;
 	char *current_user = NULL;
 	char *challenge_reply=NULL;
@@ -322,17 +319,19 @@ void socket_thread_handle(socket_thread_data_t *td)
 				syslog(LOG_WARNING, "insufficient tokens in query");
 				res = send_result(td, 500);
 			} else if(challenge_type == ONE_WAY) {
-				free(current_server_challenge);
-				current_server_challenge = NULL;
-				if((current_challenge=generate_challenge(td->dynalogin_session,argv[3], challenge, &current_challenge_length))==NULL)
+				if(generate_challenge(td->dynalogin_session,argv[3], current_client_challenge)==DYNALOGIN_ERROR)
 				{
 					syslog(LOG_ERR, "couldn't generate challenge string, aborting");
+					challenge_type = INVALID;
+					*current_client_challenge = '\0';
 					res = send_result(td,500);
 				} else {
-					challenge_reply=calloc(strlen(challenge)+13,sizeof(char));
-					if((ret=snprintf(challenge_reply,strlen(challenge)+13,"250 CHALL %s\n",challenge))>=strlen(challenge)+14)
+					challenge_reply=calloc(strlen(current_client_challenge)+13,sizeof(char));
+					if((ret=snprintf(challenge_reply,strlen(current_client_challenge)+13,"250 CHALL %s\n",current_client_challenge))>=strlen(current_client_challenge)+14)
 					{
 						syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
+						challenge_type = INVALID;
+						*current_client_challenge = '\0';
 						res = send_result(td,500);
 					} else {
 						current_user = malloc(strlen(argv[3])+1);
@@ -342,59 +341,45 @@ void socket_thread_handle(socket_thread_data_t *td)
 					free(challenge_reply);
 				}
 			} else if(challenge_type == TWO_WAY) {
-				if((current_server_challenge = convert_server_challenge(td->dynalogin_session,argv[3],argv[4], &current_server_challenge_length))==NULL) {
-					syslog(LOG_ERR, "couldn't convert server challenge string, aborting");
-					res = send_result(td,500);
-				} else if((current_challenge=generate_challenge(td->dynalogin_session,argv[3], challenge, &current_challenge_length))==NULL) {
-					free(current_server_challenge);
-					current_server_challenge = NULL;
+				if(generate_challenge(td->dynalogin_session,argv[3], current_client_challenge)==DYNALOGIN_ERROR) {
 					syslog(LOG_ERR, "couldn't generate challenge string, aborting");
+					challenge_type = INVALID;
+					*current_client_challenge = '\0';
 					res = send_result(td,500);
 				} else {
-					current_combined_challenges = malloc(current_server_challenge_length+current_challenge_length);
-					if(current_combined_challenges == NULL) {
-						syslog(LOG_ERR, "couldn't allocate memory for challenges");
-						free(current_server_challenge);
-						free(current_challenge);
-						current_server_challenge = NULL;
-						current_challenge = NULL;
+					strcpy(current_server_challenge,argv[4]);
+					current_challenges[0] = current_client_challenge;
+					current_challenges[1] = current_server_challenge;
+					if((current_server_value = dynalogin_ocra_calculate_server_value( td->dynalogin_session, argv[3], current_challenges, 2)
+					   ) == NULL) 
+					{
+						syslog(LOG_ERR, "couldn't calculate server value, aborting");
+						challenge_type = INVALID;
+						*current_client_challenge = '\0';
+						*current_server_challenge = '\0';
 						res = send_result(td,500);
 					} else {
-						memcpy(current_combined_challenges,current_challenge,current_challenge_length);
-						memcpy(current_combined_challenges+current_challenge_length,current_server_challenge, current_server_challenge_length);
-						if((current_server_value = dynalogin_ocra_calculate_server_value( td->dynalogin_session, argv[3], current_combined_challenges, current_server_challenge_length+current_challenge_length)
-						   ) == NULL) 
+						challenge_reply=calloc(strlen(current_server_value)+strlen(current_client_challenge)+14,sizeof(char));
+						if((ret=snprintf(
+										challenge_reply,
+										strlen(current_server_value)+strlen(current_client_challenge)+14,
+										"250 CHALL %s %s\n",
+										current_server_value,
+										current_client_challenge))
+								>=
+								strlen(current_server_value)+strlen(current_client_challenge)+15)
 						{
-							syslog(LOG_ERR, "couldn't calculate server value, aborting");
-							free(current_server_challenge);
-							free(current_challenge);
-							free(current_combined_challenges);
-							current_server_challenge = NULL;
-							current_combined_challenges = NULL;
-							current_challenge = NULL;
-							res = send_result(td,500);
+							syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
+							challenge_type = INVALID;
+							*current_client_challenge = '\0';
+							*current_server_challenge = '\0';
+							res=send_result(td,500);
 						} else {
-							free(current_combined_challenges);
-							current_combined_challenges = NULL;
-							challenge_reply=calloc(strlen(current_server_value)+strlen(challenge)+14,sizeof(char));
-							if((ret=snprintf(
-											challenge_reply,
-											strlen(current_server_value)+strlen(challenge)+14,
-											"250 CHALL %s %s\n",
-											current_server_value,
-											challenge))
-									>=
-									strlen(current_server_value)+strlen(challenge)+15)
-							{
-								syslog(LOG_ERR, "challenge reply too long (%d), aborting",ret);
-								res=send_result(td,500);
-							} else {
-								current_user = malloc(strlen(argv[3])+1);
-								strncpy(current_user, argv[3],strlen(argv[3])+1);
-								res = send_answer(td,challenge_reply);
-							}
-							free(challenge_reply);
+							current_user = malloc(strlen(argv[3])+1);
+							strncpy(current_user, argv[3],strlen(argv[3])+1);
+							res = send_answer(td,challenge_reply);
 						}
+						free(challenge_reply);
 					}
 				}
 			}
@@ -500,91 +485,77 @@ void socket_thread_handle(socket_thread_data_t *td)
 				{
 					/* Command too short */
 					syslog(LOG_WARNING, "insufficient tokens in query");
+					challenge_type = INVALID;
+					*current_client_challenge = '\0';
+					*current_server_challenge = '\0';
 					res = send_result(td, 500);
 				}
 				else
 				{
 					syslog(LOG_DEBUG, "attempting DYNALOGIN auth for user=%s", userid);
-					if(current_challenge==NULL || current_user==NULL)
+					if(strlen(current_client_challenge)==0 || current_user==NULL)
 					{
 						syslog(LOG_WARNING, "need to generate challenge before authenticating using OCRA");
+						challenge_type = INVALID;
+						*current_client_challenge = '\0';
+						*current_server_challenge = '\0';
 						res = send_answer(td, "500 cannot authenticate using OCRA without generating a challenge first\n");
-						free(current_challenge);
 						free(current_user);
-						free(current_server_challenge);
-						current_server_challenge = NULL;
 						current_user = NULL;
-						current_challenge = NULL;
 					}
 					else if(strcmp(userid,current_user)!=0)
 					{
 						syslog(LOG_WARNING, "attempted authentication with different user than challenge was requested for: %s vs %s",userid,current_user);
+						challenge_type = INVALID;
+						*current_client_challenge = '\0';
+						*current_server_challenge = '\0';
 						free(current_user);
-						free(current_challenge);
-						free(current_server_challenge);
-						current_server_challenge = NULL;
 						current_user = NULL;
-						current_challenge = NULL;
-
 						res = send_answer(td, "500 cannot authenticate with different user than challenge requester\n");
 					}
 					else
 					{
-						if(current_server_challenge==NULL) {
+						if(challenge_type==ONE_WAY) {
+							current_challenges[0] = current_client_challenge;
 							syslog(LOG_WARNING, "delegating one-way authentication to libdynalogin");
 							dynalogin_res = dynalogin_authenticate_ocra(td->dynalogin_session,
-									userid, code, current_challenge, current_challenge_length);
-							free(current_server_challenge);
-							current_server_challenge = NULL;
-						} else {
-							syslog(LOG_WARNING, "two-way authentication requested, combining challenges");
-							current_combined_challenges = malloc(current_challenge_length+current_server_challenge_length);
-							if(current_combined_challenges == NULL) {
-								syslog(LOG_ERR, "couldn't allocate memory for combined challenges");
-								free(current_server_challenge);
-								current_server_challenge=NULL;
-								dynalogin_res = DYNALOGIN_ERROR;
-							} else {
-								memcpy(current_combined_challenges,current_server_challenge,current_server_challenge_length);
-								memcpy(current_combined_challenges+current_server_challenge_length,current_challenge,current_challenge_length);
+									userid, code, current_challenges, 1);
+							*current_server_challenge='\0';
+						} else if(challenge_type == TWO_WAY){
+							current_challenges[0] = current_server_challenge;
+							current_challenges[1] = current_client_challenge;
+							syslog(LOG_WARNING, "delegating two-way authentication to libdynalogin");
 
-								syslog(LOG_WARNING, "delegating two-way authentication to libdynalogin");
-
-								dynalogin_res = dynalogin_authenticate_ocra
-									(td->dynalogin_session,userid, code, 
-									 current_combined_challenges, 
-									 current_challenge_length+current_server_challenge_length);
-								free(current_combined_challenges);
-								free(current_server_challenge);
-								current_server_challenge=NULL;
-							}
+							dynalogin_res = dynalogin_authenticate_ocra
+								(td->dynalogin_session,userid, code, 
+								 current_challenges, 2);
 						}
+					}
 
-						free(current_user);
-						free(current_challenge);
-						current_challenge=NULL;
-						current_user=NULL;
+					free(current_user);
 
-						switch(dynalogin_res)
-						{
-							case DYNALOGIN_SUCCESS:
-								syslog(LOG_DEBUG, "DYNALOGIN success for user=%s", userid);
-								res = send_result(td, 250);
-								break;
-							case DYNALOGIN_DENY:
-								/* User unknown or bad password */
-								syslog(LOG_DEBUG, "DYNALOGIN denied for user=%s", userid);
-								res = send_result(td, 401);
-								break;
-							case DYNALOGIN_ERROR:
-								/* Error connecting to DB, etc */
-								syslog(LOG_DEBUG, "DYNALOGIN error for user=%s", userid);
-								res = send_result(td, 500);
-								break;
-							default:
-								syslog(LOG_DEBUG, "DYNALOGIN unexpected result for user=%s", userid);
-								res = send_result(td, 500);
-						}
+					*current_client_challenge = '\0';
+					*current_server_challenge = '\0';
+
+					switch(dynalogin_res)
+					{
+						case DYNALOGIN_SUCCESS:
+							syslog(LOG_DEBUG, "DYNALOGIN success for user=%s", userid);
+							res = send_result(td, 250);
+							break;
+						case DYNALOGIN_DENY:
+							/* User unknown or bad password */
+							syslog(LOG_DEBUG, "DYNALOGIN denied for user=%s", userid);
+							res = send_result(td, 401);
+							break;
+						case DYNALOGIN_ERROR:
+							/* Error connecting to DB, etc */
+							syslog(LOG_DEBUG, "DYNALOGIN error for user=%s", userid);
+							res = send_result(td, 500);
+							break;
+						default:
+							syslog(LOG_DEBUG, "DYNALOGIN unexpected result for user=%s", userid);
+							res = send_result(td, 500);
 					}
 				}
 			} else {
@@ -597,14 +568,12 @@ void socket_thread_handle(socket_thread_data_t *td)
 			/* Unrecognised command */
 			res = send_result(td, 500);
 		}
-	
+
 		if(res != APR_SUCCESS)
 		{
 			syslog(LOG_ERR, "failed to send response: %s",
 					apr_strerror(res, errbuf, ERRBUFLEN));
 			free(current_user);
-			free(current_challenge);
-			free(current_server_challenge);
 
 			return;
 		}
@@ -613,8 +582,6 @@ void socket_thread_handle(socket_thread_data_t *td)
 		if((res=apr_pool_create(&query_pool, td->pool))!=APR_SUCCESS)
 		{
 			free(current_user);
-			free(current_challenge);
-			free(current_server_challenge);
 			syslog(LOG_ERR, "failed to create query pool: %s",
 							apr_strerror(res, errbuf, ERRBUFLEN));
 			return;
